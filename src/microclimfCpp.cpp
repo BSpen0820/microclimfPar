@@ -541,6 +541,12 @@ std::vector<double> hourtodayCpp(std::vector<double> hourly, std::string stat, b
 }
 // **  Function to compute rolling mean temp ** //
 std::vector<double> maCpp(std::vector<double> x, int n) {
+    // A zero-width window has no averaging to do (0/0 would otherwise
+    // yield NaN for every element) - reqhgt == 0 (ground surface) always
+    // rounds to n == 0 in snowdaymov()'s -118.35*reqhgt/meanD, so this is
+    // reached on every snow-covered, surface-depth run, not just a
+    // theoretical edge case.
+    if (n == 0) return x;
     std::vector<double> y(x.size());
     int m = x.size();
     for (int i = 0; i < m; ++i) {

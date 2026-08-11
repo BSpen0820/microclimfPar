@@ -611,7 +611,8 @@
   si[si<0]<-0
   dni<-di/si
   dni[is.na(dni)]<-0
-  dni[dni>1352]<-1352
+  dni[dni>1352]<-0
+  dni[dni<0]<-0
   micro$dirr<-.vta(dni,r)
   micro$lwdown<-.vta(weather$lwdown,r)
   micro$u2<-.vta(weather$windspeed,r)
@@ -755,7 +756,8 @@
   si[si<0]<-0
   micro$dirr<-di/si
   micro$dirr[is.na(micro$dirr)]<-0
-  micro$dirr[micro$dirr>1352]<-1352
+  micro$dirr[micro$dirr>1352]<-0
+  micro$dirr[micro$dirr<0]<-0
   micro$lwdown<-.cca(weather,"lwdown",h,r,rfi)
   # Wind speed and direction
   u2<-.cca(weather,"windspeed",h,r,r)

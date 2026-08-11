@@ -202,8 +202,12 @@ radmodel RadswabsCpp(double pai, double x, double lref, double ltra, double clum
                 tsdirstruct tspdir = twostreamdirCpp(pait, tspdif.om, tspdif.a, tspdif.gma, tspdif.J, tspdif.del, tspdif.h, gref,
                     kp.kd, tspdif.u1, tspdif.S1, tspdif.D1, tspdif.D2);
                 // Calculate beam normalisations
-                double Rbeam = (Rsw[i] - Rdif[i]) / cosz;
-                if (Rbeam > 1352.0) Rbeam = 1352.0;
+                double Rbeam = 0.0;
+                if (cosz > 0.0) {
+                    Rbeam = (Rsw[i] - Rdif[i]) / cosz;
+                    if (Rbeam > 1352.0) Rbeam = 0.0;
+                    if (Rbeam < 0.0) Rbeam = 0.0;
+                }
                 double trb = std::pow(clump, kp.Kc);
                 if (trb > 0.999) trb = 0.999;
                 if (trb < 0.0) trb = 0.0;
@@ -1078,6 +1082,9 @@ radmodel2 twostreamCpp(double pai, double clump, double gref, double svfa, doubl
     radmodel2 out;
     if (Rsw > 0.0) {
         double cosz = std::cos(solp.zenr);
+        // Sun at or below the horizon: zenith exceeds 90 degrees and cosz turns
+        // negative. Clamp as cankCpp does, so no downstream term sees a negative.
+        if (cosz < 0.0) cosz = 0.0;
         if (pai > 0.0) {
             // Calculate gap tranmissions
             double trbn = std::pow(clump, kp.Kc); // direct transmission downward at ground
@@ -1107,8 +1114,14 @@ radmodel2 twostreamCpp(double pai, double clump, double gref, double svfa, doubl
             if (Rdbdn_z > tir.amx) Rdbdn_z = tir.amx;
             if (Rdbdn_z < 0.0) Rdbdn_z = 0.0;
             // Calculate incident flux
-            double Rbeam = (Rsw - Rdif) / cosz;
-            if (Rbeam > 1352.0) Rbeam = 1352.0;
+            double Rbeam = 0.0;
+            if (cosz > 0.0) {
+                Rbeam = (Rsw - Rdif) / cosz;
+                // Above the solar constant the forcing and the solar geometry disagree,
+                // so the beam is not recoverable: treat as no direct radiation.
+                if (Rbeam > 1352.0) Rbeam = 0.0;
+                if (Rbeam < 0.0) Rbeam = 0.0;
+            }
             double Rb = Rbeam * cosz;
             double trg = trb + (1 - trb) * std::exp(-kp.kd * tir.pait); // tranmission to ground though gaps and leaves
             double Rbc = (trg * si + (1 - trg) * cosz) * Rbeam;
@@ -1131,7 +1144,12 @@ radmodel2 twostreamCpp(double pai, double clump, double gref, double svfa, doubl
             out.radLpar = 0.5 * (1.0 - tir.omp) * (out.Rddown + out.Rdup + kp.k * cosz * out.Rbdown);
         } // end if pai > 0
         else {
-            out.Rbdown = (Rsw - Rdif) / cosz;
+            out.Rbdown = 0.0;
+            if (cosz > 0.0) {
+                out.Rbdown = (Rsw - Rdif) / cosz;
+                if (out.Rbdown > 1352.0) out.Rbdown = 0.0;
+                if (out.Rbdown < 0.0) out.Rbdown = 0.0;
+            }
             out.Rddown = Rdif * svfa;
             out.Rdup = gref * (Rdif * svfa + (Rsw - Rdif));
             out.radGsw = (1.0 - gref) * (svfa * Rdif + si * out.Rbdown);
@@ -3781,11 +3799,19 @@ snowrad radoneB(obspoint obstime, climpoint clim, vegpoint vegp, snowpoint snow,
         solmodel solp = solpositionCpp(other.lat, other.lon, obstime.year, obstime.month, obstime.day, obstime.hour);
         double si = solarindexCpp(other.slope, other.aspect, solp.zend, solp.azid);
         if (solp.zend > 90.0) solp.zend = 90.0;
+        // The guard above clamps the degrees field only; zenr is what cos() reads
+        // below, so it must be clamped too or cosz turns negative below the horizon.
+        if (solp.zenr > (pi / 2.0)) solp.zenr = pi / 2.0;
         if (si < 0.0) si = 0.0;
         // *** Calculate radiation absorbed by canopy *** //
         double cosz = std::cos(solp.zenr);
-        double Rbeam = (clim.Rsw - clim.Rdif) / cosz;
-        if (Rbeam > 1352.2) Rbeam = 1352.2;
+        if (cosz < 0.0) cosz = 0.0;
+        double Rbeam = 0.0;
+        if (cosz > 0.0) {
+            Rbeam = (clim.Rsw - clim.Rdif) / cosz;
+            if (Rbeam > 1352.2) Rbeam = 0.0;
+            if (Rbeam < 0.0) Rbeam = 0.0;
+        }
         double RswabsC = (1.0 - snow.alb) * (clim.Rdif + Rbeam * cosz);
         out.RabsC = RswabsC + RlwabsC;
         // *** Calculate shortwave radiation absorbed by ground *** //
@@ -4820,7 +4846,8 @@ snowmicro snowabovepoint(double reqhgt, double zref, double tc, double relhum, d
             if (si > 0.0) {
                 if (shadowmask > 0) {
                     out.Rbdown = (Rsw - Rdif) / si;
-                    if (out.Rbdown > 1352.0) out.Rbdown = 1352.0;
+                    if (out.Rbdown > 1352.0) out.Rbdown = 0.0;
+                    if (out.Rbdown < 0.0) out.Rbdown = 0.0;
                     out.Rdup = snowp.albc * Rsw * svfa;
                 }
                 else {

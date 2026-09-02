@@ -613,6 +613,15 @@
   dni[is.na(dni)]<-0
   dni[dni>1352]<-0
   dni[dni<0]<-0
+  # Recovering a beam-normal value as di/cos(zenith) is numerically unstable near the
+  # horizon: as cos(zenith) -> 0, any nonzero residual di (expected/ordinary - forcing
+  # data and instantaneous solar geometry never align exactly) is amplified without
+  # bound. The flat 1352 (solar constant) ceiling above only catches the most extreme
+  # cases. Follow the same zenith cutoff already used by the Erbs diffuse-fraction
+  # decomposition elsewhere in this pipeline (SpencerEcoTools::estimate_diffuse_rad)
+  # and by pvlib's erbs/disc/dirint models: min_cos_zenith = 0.065 (zenith > ~86.27
+  # degrees) is treated as beyond reliable direct-beam recovery, so force to all-diffuse.
+  dni[si<0.065]<-0
   micro$dirr<-.vta(dni,r)
   micro$lwdown<-.vta(weather$lwdown,r)
   micro$u2<-.vta(weather$windspeed,r)
@@ -758,6 +767,15 @@
   micro$dirr[is.na(micro$dirr)]<-0
   micro$dirr[micro$dirr>1352]<-0
   micro$dirr[micro$dirr<0]<-0
+  # Recovering a beam-normal value as di/cos(zenith) is numerically unstable near the
+  # horizon: as cos(zenith) -> 0, any nonzero residual di (expected/ordinary - forcing
+  # data and instantaneous solar geometry never align exactly) is amplified without
+  # bound. The flat 1352 (solar constant) ceiling above only catches the most extreme
+  # cases. Follow the same zenith cutoff already used by the Erbs diffuse-fraction
+  # decomposition elsewhere in this pipeline (SpencerEcoTools::estimate_diffuse_rad)
+  # and by pvlib's erbs/disc/dirint models: min_cos_zenith = 0.065 (zenith > ~86.27
+  # degrees) is treated as beyond reliable direct-beam recovery, so force to all-diffuse.
+  micro$dirr[si<0.065]<-0
   micro$lwdown<-.cca(weather,"lwdown",h,r,rfi)
   # Wind speed and direction
   u2<-.cca(weather,"windspeed",h,r,r)

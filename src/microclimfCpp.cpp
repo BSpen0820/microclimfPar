@@ -203,7 +203,13 @@ radmodel RadswabsCpp(double pai, double x, double lref, double ltra, double clum
                     kp.kd, tspdif.u1, tspdif.S1, tspdif.D1, tspdif.D2);
                 // Calculate beam normalisations
                 double Rbeam = 0.0;
-                if (cosz > 0.0) {
+                // (Rsw-Rdif)/cosz blows up as cosz -> 0: any ordinary nonzero residual
+                // gets amplified without bound near the horizon. Require cosz >= 0.065
+                // (zenith <= ~86.27 deg) before trusting the recovered beam, matching
+                // pvlib's erbs/disc/dirint min_cos_zenith convention; below that, treat
+                // as unrecoverable and force to all-diffuse rather than accepting an
+                // amplified value bounded only by the flat solar-constant cap below.
+                if (cosz >= 0.065) {
                     Rbeam = (Rsw[i] - Rdif[i]) / cosz;
                     if (Rbeam > 1352.0) Rbeam = 0.0;
                     if (Rbeam < 0.0) Rbeam = 0.0;
@@ -246,7 +252,20 @@ radmodel RadswabsCpp(double pai, double x, double lref, double ltra, double clum
                 solmodel solp = solpositionCpp(lat, lon, year[i], month[i], day[i], lt[i]);
                 double si = solarindexCpp(slope, aspect, solp.zend, solp.azid);
                 if (solp.zenr > pi / 2.0) solp.zenr = pi / 2.0;
-                double dirr = (Rsw[i] - Rdif[i]) / std::cos(solp.zenr);
+                double coszb = std::cos(solp.zenr);
+                // This branch (pai<=0, bare ground) previously had NO clamp at all on
+                // the (Rsw-Rdif)/cosz beam recovery, unlike every other site doing the
+                // same division in this file. As cosz -> 0 near the horizon, any
+                // ordinary nonzero residual is amplified without bound. Require
+                // cosz >= 0.065 (zenith <= ~86.27 deg), matching pvlib's erbs/disc/dirint
+                // min_cos_zenith convention and the other clamped sites below; otherwise
+                // treat the beam as unrecoverable and force to all-diffuse.
+                double dirr = 0.0;
+                if (coszb >= 0.065) {
+                    dirr = (Rsw[i] - Rdif[i]) / coszb;
+                    if (dirr > 1352.0) dirr = 0.0;
+                    if (dirr < 0.0) dirr = 0.0;
+                }
                 radGsw[i] = (1 - gref) * (Rdif[i] + si * dirr);
                 radCsw[i] = radGsw[i];
             }
@@ -1115,10 +1134,15 @@ radmodel2 twostreamCpp(double pai, double clump, double gref, double svfa, doubl
             if (Rdbdn_z < 0.0) Rdbdn_z = 0.0;
             // Calculate incident flux
             double Rbeam = 0.0;
-            if (cosz > 0.0) {
+            // (Rsw-Rdif)/cosz blows up as cosz -> 0: any ordinary nonzero residual
+            // gets amplified without bound near the horizon. Require cosz >= 0.065
+            // (zenith <= ~86.27 deg) before trusting the recovered beam, matching
+            // pvlib's erbs/disc/dirint min_cos_zenith convention; below that, treat
+            // as unrecoverable and force to all-diffuse. The flat 1352 (solar
+            // constant) ceiling below is kept as a secondary sanity backstop for
+            // forcing/geometry disagreement at zenith angles this floor still allows.
+            if (cosz >= 0.065) {
                 Rbeam = (Rsw - Rdif) / cosz;
-                // Above the solar constant the forcing and the solar geometry disagree,
-                // so the beam is not recoverable: treat as no direct radiation.
                 if (Rbeam > 1352.0) Rbeam = 0.0;
                 if (Rbeam < 0.0) Rbeam = 0.0;
             }
@@ -1145,7 +1169,16 @@ radmodel2 twostreamCpp(double pai, double clump, double gref, double svfa, doubl
         } // end if pai > 0
         else {
             out.Rbdown = 0.0;
-            if (cosz > 0.0) {
+            // (Rsw-Rdif)/cosz blows up as cosz -> 0: any ordinary nonzero residual
+            // gets amplified without bound near the horizon. This is the path that
+            // produced physically-impossible SOLR (600-1300+ W/m^2 at zenith 85-90 deg)
+            // in bare-ground (pai=0) grid cells near sunrise/sunset - out.Rbdown here
+            // is exported as Rdirdown and summed straight into SOLR. Require
+            // cosz >= 0.065 (zenith <= ~86.27 deg), matching pvlib's erbs/disc/dirint
+            // min_cos_zenith convention; below that, treat the beam as unrecoverable
+            // and force to all-diffuse rather than accepting an amplified value
+            // bounded only by the flat solar-constant cap below.
+            if (cosz >= 0.065) {
                 out.Rbdown = (Rsw - Rdif) / cosz;
                 if (out.Rbdown > 1352.0) out.Rbdown = 0.0;
                 if (out.Rbdown < 0.0) out.Rbdown = 0.0;

@@ -1,7 +1,7 @@
 Package: microclimfPara
 Type: Package
 Title: microclimfPara: Fast above, below or within canopy gridded microclimate modelling with parallelization
-Version: 2.0.4
+Version: 2.0.5
 Authors@R: c(
     person("Bryan", "Spencer", email = "bspencer@uidaho.edu", role = "cre"))
 Maintainer: B. D. Spencer <bspencer@uidaho.edu>

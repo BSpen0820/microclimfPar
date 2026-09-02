@@ -170,6 +170,16 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// getMxfarEngagementsCpp
+long long getMxfarEngagementsCpp();
+RcppExport SEXP _microclimfPara_getMxfarEngagementsCpp() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(getMxfarEngagementsCpp());
+    return rcpp_result_gen;
+END_RCPP
+}
 // solargrid
 List solargrid(NumericMatrix slope, NumericMatrix aspect, DataFrame obstime, List micro);
 RcppExport SEXP _microclimfPara_solargrid(SEXP slopeSEXP, SEXP aspectSEXP, SEXP obstimeSEXP, SEXP microSEXP) {
@@ -1050,6 +1060,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_microclimfPara_soilmCpp", (DL_FUNC) &_microclimfPara_soilmCpp, 8},
     {"_microclimfPara_soildCppm", (DL_FUNC) &_microclimfPara_soildCppm, 4},
     {"_microclimfPara_mincondCpp", (DL_FUNC) &_microclimfPara_mincondCpp, 4},
+    {"_microclimfPara_getMxfarEngagementsCpp", (DL_FUNC) &_microclimfPara_getMxfarEngagementsCpp, 0},
     {"_microclimfPara_solargrid", (DL_FUNC) &_microclimfPara_solargrid, 4},
     {"_microclimfPara_twostreamgrid", (DL_FUNC) &_microclimfPara_twostreamgrid, 2},
     {"_microclimfPara_windgrid", (DL_FUNC) &_microclimfPara_windgrid, 2},

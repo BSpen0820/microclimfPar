@@ -45,10 +45,6 @@ mincondCpp <- function(leafabs, gs, tc, leafd) {
     .Call(`_microclimfPara_mincondCpp`, leafabs, gs, tc, leafd)
 }
 
-getMxfarEngagementsCpp <- function() {
-    .Call(`_microclimfPara_getMxfarEngagementsCpp`)
-}
-
 solargrid <- function(slope, aspect, obstime, micro) {
     .Call(`_microclimfPara_solargrid`, slope, aspect, obstime, micro)
 }

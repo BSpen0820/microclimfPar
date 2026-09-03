@@ -1401,7 +1401,7 @@ leaftempstruct leaftemp(double Tcan, double Tg, double tc, double mxtc, double p
     out.L = pm.L;
     return out;
 }
-double rhcanopy(double uf, double h, double d, double z)
+double rhcanopy(double uf, double h, double d, double z, double H, double Tk)
 {
     double a2 = 0.4 * (1.0 - (d / h)) / std::pow(1.25, 2);
     double inth = 4.293251 * h;
@@ -1412,19 +1412,42 @@ double rhcanopy(double uf, double h, double d, double z)
                 ((25.0 * std::pow(std::sin((pi * z) / h), 2.0)) /
                     std::pow((std::cos((pi * z) / h) + 1.0), 2.0) + 5.0)))) / pi;
     }
-    double mu = uf / (a2 * h) * 1.0 / (uf * uf);
+    // Free-convection velocity scale, added in quadrature to friction velocity to
+    // remove the calm-wind (uf -> 0) singularity in this forced-convection-only
+    // resistance formula. Standard treatment for exactly this failure mode in
+    // large-scale land-surface schemes (Beljaars 1995, QJRMS 121:255-270, "The
+    // parametrization of surface fluxes in large-scale models under free
+    // convection"; same quadrature form in CLM5 -- Lawrence et al. 2019, Fluxes
+    // ch., eqns 2.5.24-2.5.29). Canopy length scale (h, not boundary-layer depth)
+    // after Jacobs, Van Boxel & El-Kilani (1994) Boundary-Layer Meteorology
+    // 71:375-391, who show in-canopy calm-wind transport is buoyancy-driven and
+    // scales with a free-convective velocity w* rather than u*. Unlike a hard
+    // floor/ceiling on wind or resistance (tried and reverted -- see git history
+    // on branch revert/rhcanopy-to-fix3-only, fix4/fix5), this is a function of
+    // BOTH resistance and local heat flux jointly: near-no-op when H is small
+    // (resistance was never pathological there regardless of wind), and only
+    // engages materially where wind is calm AND heat flux is real.
+    const double ggrav = 9.81;    // m s-2
+    const double rhocp = 1200.0;  // J m-3 K-1, bulk (rho*cp) of air
+    const double cfree = 1.0;     // beta; Beljaars uses 1.2, CLM5 uses 1.0
+    double Hpos = (H > 0.0) ? H : 0.0;  // buoyancy requires an upward (destabilising) flux
+    double wstar = std::pow(ggrav * h * Hpos / (rhocp * Tk), 1.0 / 3.0);
+    double ue = std::sqrt(uf * uf + cfree * cfree * wstar * wstar);
+    if (ue < 0.001) ue = 0.001;
+    double mu = 1.0 / (a2 * h * ue);
     double rHa = inth * mu;
     if (rHa < 0.001) rHa = 0.001;
     return rHa;
 }
 double TVbelow(double zref, double z, double d, double h, double pai, double uf,
-    double leafden, double Flux, double Fluxz, double SH, double SG, double mxnear)
+    double leafden, double Flux, double Fluxz, double SH, double SG, double mxnear,
+    double Hflux, double Tk)
 {
     // Calculate thermal diffusivities
-    double Rc = rhcanopy(uf, h, d, h);
+    double Rc = rhcanopy(uf, h, d, h, Hflux, Tk);
     double Kc = h / Rc;
-    double Kg = 1.0 / rhcanopy(uf, h, d, z);
-    double Kh = 1.0 / (Rc - rhcanopy(uf, h, d, z));
+    double Kg = 1.0 / rhcanopy(uf, h, d, z, Hflux, Tk);
+    double Kh = 1.0 / (Rc - rhcanopy(uf, h, d, z, Hflux, Tk));
     Kg = Kg / z;
     Kh = Kh / (h - z);
     // Calculate canopy source concentration
@@ -1484,19 +1507,24 @@ abovemodel TVaboveground(double reqhgt, double zref, double tc, double pk, doubl
         out.tleaf = tvl.tleaf;
         // Calculate temperature below canopy
         double Flux = pm.H * (1.0 - std::exp(-pai));
+        // Real below-canopy sensible heat flux (W/m2), kept separately since Flux
+        // is reused below for vapour -- buoyancy is driven by sensible heat
+        // regardless of which scalar TVbelow() is currently solving for
+        double Hbelow = Flux;
+        double Tk = tc + 273.15;
         double Fluxz = tvl.H;
         abovecanstruct tv = TVabove(hgt, zref, hgt, tiw.d, tiw.zm, Tcan, tc, ea, surfwet);
         double SH = tv.Tz * 29.3 * 43.0;
         double SG = Gvars.Tg * 29.3 * 43.0;
         double mxnear = std::abs(out.tleaf - tv.Tz) * 29.3 * 43.0;
-        out.Tz = TVbelow(zref, reqhgt, tiw.d, hgt, pai, wvars.uf, leafden, Flux, Fluxz, SH, SG, mxnear) / (29.3 * 43.0);
+        out.Tz = TVbelow(zref, reqhgt, tiw.d, hgt, pai, wvars.uf, leafden, Flux, Fluxz, SH, SG, mxnear, Hbelow, Tk) / (29.3 * 43.0);
         // Calculate humidity below canopy
         Flux = pm.L * (1.0 - std::exp(-pai));
         Fluxz = tvl.L;
         SH = tv.ez * pm.mu;
         SG = satvapCpp(Gvars.Tg) * gwet * pm.mu;
         mxnear = std::abs(satvapCpp(out.tleaf) - tv.ez) * pm.mu;
-        ez = TVbelow(zref, reqhgt, tiw.d, hgt, pai, wvars.uf, leafden, Flux, Fluxz, SH, SG, mxnear) / pm.mu;
+        ez = TVbelow(zref, reqhgt, tiw.d, hgt, pai, wvars.uf, leafden, Flux, Fluxz, SH, SG, mxnear, Hbelow, Tk) / pm.mu;
         out.lwdn = tvl.lwdn;
         out.lwup = tvl.lwup;
     }
@@ -4946,12 +4974,17 @@ snowmicro snowabovepoint(double reqhgt, double zref, double tc, double relhum, d
         out.tleaf = tvl.tleaf;
         double H = 29.3 * wind.gHa * (snowp.snowtempc - tc);
         double Flux = H * (1.0 - std::exp(-pais));
+        // Real below-canopy sensible heat flux (W/m2) for the free-convection
+        // term in rhcanopy() -- see TVaboveground() for rationale; Flux itself is
+        // reused below for vapour, so keep this separately
+        double Hbelow = Flux;
+        double Tk = tc + 273.15;
         double Fluxz = tvl.H;
         abovecanstruct tv = TVabove(hgts, zref, hgts, tiw.d, tiw.zm, snowp.snowtempc, tc, ea, 1.0);
         double SH = tv.Tz * 29.3 * 43.0;
         double SG = snowp.snowtempg * 29.3 * 43.0;
         double mxnear = std::abs(out.tleaf - tv.Tz) * 29.3 * 43.0;
-        out.Tz = TVbelow(zref, reqhgt, tiw.d, hgts, pais, wind.uf, leafden, Flux, Fluxz, SH, SG, mxnear) / (29.3 * 43);
+        out.Tz = TVbelow(zref, reqhgt, tiw.d, hgts, pais, wind.uf, leafden, Flux, Fluxz, SH, SG, mxnear, Hbelow, Tk) / (29.3 * 43);
         // Calculative vapour pressure below canopy
         double la;
         if (tc < 0) {
@@ -4968,7 +5001,7 @@ snowmicro snowabovepoint(double reqhgt, double zref, double tc, double relhum, d
         SH = tv.ez * mu;
         SG = satvapCpp(snowp.snowtempg) * mu;
         mxnear = std::abs(satvapCpp(out.tleaf) - tv.ez) * mu;
-        ez = TVbelow(zref, reqhgt, tiw.d, hgts, pais, wind.uf, leafden, Flux, Fluxz, SH, SG, mxnear) / mu;
+        ez = TVbelow(zref, reqhgt, tiw.d, hgts, pais, wind.uf, leafden, Flux, Fluxz, SH, SG, mxnear, Hbelow, Tk) / mu;
         out.Rbdown = rad.Rbdown;
         out.Rddown = rad.Rddown;
         out.Rdup = rad.Rdup;

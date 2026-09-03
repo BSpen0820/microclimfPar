@@ -119,10 +119,10 @@ leaftempstruct leaftemp(double Tcan, double Tg, double tc, double mxtc, double p
                         double pai, double paia, double leafd, double gsmax,
                         double PARabs, double theta, double Smax, double psi_e,
                         double soilb, stompstruct stomp);
-double rhcanopy(double uf, double h, double d, double z);
+double rhcanopy(double uf, double h, double d, double z, double H, double Tk);
 double TVbelow(double zref, double z, double d, double h, double pai, double uf,
                double leafden, double Flux, double Fluxz, double SH, double SG,
-               double mxnear);
+               double mxnear, double Hflux, double Tk);
 abovemodel TVaboveground(double reqhgt, double zref, double tc, double pk, double ea,
                          double es, double tdew, double Rsw, double Rdif, double Rlw,
                          double soilm, double hgt, double pai, double paia, double vegx,

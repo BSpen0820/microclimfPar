@@ -3840,7 +3840,12 @@ snowrad radoneB(obspoint obstime, climpoint clim, vegpoint vegp, snowpoint snow,
         double cosz = std::cos(solp.zenr);
         if (cosz < 0.0) cosz = 0.0;
         double Rbeam = 0.0;
-        if (cosz > 0.0) {
+        // (Rsw-Rdif)/cosz blows up as cosz -> 0: any ordinary nonzero residual
+        // gets amplified without bound near the horizon. Require cosz >= 0.065
+        // (zenith <= ~86.27 deg), matching pvlib's erbs/disc/dirint convention,
+        // and the same gate applied to every other beam-recovery site in this
+        // file -- this one (the snow-covered-ground energy balance) was missed.
+        if (cosz >= 0.065) {
             Rbeam = (clim.Rsw - clim.Rdif) / cosz;
             if (Rbeam > 1352.2) Rbeam = 0.0;
             if (Rbeam < 0.0) Rbeam = 0.0;
@@ -4876,7 +4881,13 @@ snowmicro snowabovepoint(double reqhgt, double zref, double tc, double relhum, d
     if (reqhgt >= hgts) {
         if (Rsw > 0.0) {
             out.Rddown = Rdif * svfa;
-            if (si > 0.0) {
+            // (Rsw-Rdif)/si blows up as si -> 0 near the horizon, same as the
+            // cosz division elsewhere in this file. Require si >= 0.065
+            // (pvlib erbs/disc/dirint convention) rather than merely si > 0 --
+            // this is the above-canopy AbvGrd output for snow-covered days
+            // (gridmicrosnow1/2[Par] -> snowabovepoint), which was missed when
+            // the other beam-recovery sites were fixed.
+            if (si >= 0.065) {
                 if (shadowmask > 0) {
                     out.Rbdown = (Rsw - Rdif) / si;
                     if (out.Rbdown > 1352.0) out.Rbdown = 0.0;

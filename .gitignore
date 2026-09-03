@@ -20,3 +20,5 @@ test/Base_Results/
 test/MicroPar_Ser/
 test/MicroPar_Par/
 .claude/
+debug_calmwind.R
+smoke_test_calmwind.R

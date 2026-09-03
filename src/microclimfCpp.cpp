@@ -1489,7 +1489,27 @@ double TVbelow(double zref, double z, double d, double h, double pai, double uf,
     Kg = Kg / z;
     Kh = Kh / (h - z);
     // Calculate canopy source concentration
-    double SC = SH + Flux / Kc;
+    // Bound the Flux/Kc deviation before it enters SC. The free-convection term
+    // in rhcanopy() fixes the calm-wind singularity when H > 0 (buoyancy-driven,
+    // per Beljaars 1995 / CLM5), but by design (matching CLM5's own Uc=0 under
+    // stable conditions) does nothing when H <= 0 -- and empirically (local
+    // smoke-test instrumentation, 2026-09-03) that stable/near-zero-flux case is
+    // where most of the remaining resistance blow-up (uf -> 0 with Kc -> 0,
+    // Flux/Kc -> unbounded) actually happens. This is Fix 3 from the earlier
+    // (reverted) fix attempts on this bug: a downstream, per-cell/hour symptom
+    // clamp bounding the deviation by the cell's own local thermal context
+    // (mxnear = |leaf temp - canopy-top temp|), not a blanket literature
+    // constant. It was validated against real tile data before being abandoned
+    // in favour of trying a simpler fix; kept here as the backstop for the case
+    // the literature-grounded free-convection term does not, and should not,
+    // touch.
+    double scdev = Flux / Kc;
+    double mxfar = mxnear;
+    if (std::abs(scdev) > mxfar) {
+        scdev = (scdev > 0.0) ? mxfar : -mxfar;
+    }
+    if (std::isnan(scdev)) scdev = 0.0;
+    double SC = SH + scdev;
     // Calculate far-field source concentration
     double farg = (Kg * SG + Kh * SH + Kc * SC) / (Kg + Kh + Kc);
     // Calculate leaf temperature and flux
@@ -1505,7 +1525,29 @@ double TVbelow(double zref, double z, double d, double h, double pai, double uf,
         }
     }
     if (std::isnan(near)) near = 0;
-    return near + farg;
+    double result = near + farg;
+    // DEBUG (temporary): track the running-max deviation of the TVbelow() result
+    // from the canopy-top reference (SH), to see whether "near" or "farg" is
+    // driving the worst remaining cases. Gated on the same MCF_DEBUG_RHCANOPY
+    // env var as rhcanopy()'s instrumentation; silent otherwise.
+    static int g_tvbelow_debug_on = -1;
+    if (g_tvbelow_debug_on < 0) {
+        g_tvbelow_debug_on = (std::getenv("MCF_DEBUG_RHCANOPY") != nullptr) ? 1 : 0;
+    }
+    static double g_tvbelow_debug_maxdev = 0.0;
+    static int g_tvbelow_debug_count = 0;
+    double dev = std::abs(result - SH);
+    if (g_tvbelow_debug_on && dev > g_tvbelow_debug_maxdev) {
+        g_tvbelow_debug_maxdev = dev;
+        g_tvbelow_debug_count++;
+        Rcpp::Rcout << "[TVbelow NEW MAX DEV #" << g_tvbelow_debug_count << "] uf=" << uf
+                    << " Hflux=" << Hflux << " near=" << near << " farg=" << farg
+                    << " SH=" << SH << " SG=" << SG << " SC=" << SC << " scdev=" << scdev
+                    << " mxnear=" << mxnear << " mxfar=" << mxfar
+                    << " Kg=" << Kg << " Kh=" << Kh << " Kc=" << Kc
+                    << " result=" << result << " dev=" << dev << "\n";
+    }
+    return result;
 }
 // Calculate temperature or vapour pressure above ground
 abovemodel TVaboveground(double reqhgt, double zref, double tc, double pk, double ea, double es, double tdew,

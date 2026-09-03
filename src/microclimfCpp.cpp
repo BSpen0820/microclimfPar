@@ -4026,10 +4026,45 @@ snowmodpoint snowoneB(obspoint obstime, climpoint clim, vegpoint vegp, snowpoint
     out.uf = (ka * clim.u2) / (std::log((other.zref - d) / zm) + other.psim);
     out.uf = out.uf * umu;
     double ph = phairCpp(clim.tc, clim.pk);
-    out.gHa = gturbCpp(out.uf, d, zm, other.zref, ph, other.psih, 0.03);
+    // Free-convection velocity scale (see rhcanopy() for the full derivation and
+    // citations). gturbCpp() here computes surface(ground/snow)-to-reference-height
+    // conductance and is forced-convection-only (proportional to uf), so under calm
+    // wind plus real absorbed radiation it collapses toward a fixed gmin floor with
+    // no buoyancy compensation -- measured ground/snow temperatures up to ~70C at
+    // single-digit air temps and non-extreme wind (0.5 m/s) in testing. Same failure
+    // mode already fixed in rhcanopy(), but this conductance bridges the surface to
+    // the reference height zref rather than canopy height (which is often ~0 here,
+    // for bare ground/snow -- exactly the case that needs the fix most), so zref is
+    // used as the convective length scale: standard practice for applying a
+    // free-convection floor to screen-height exchange when no diagnosed
+    // boundary-layer height is available (Beljaars 1995, QJRMS 121:255-270). H isn't
+    // known yet at this point (Tg/Tc haven't been solved), so use the same
+    // order-of-magnitude proxy this model already uses for its own first-guess H
+    // elsewhere (pointmodelsnow(), 0.5*Rabs).
+    const double ggrav = 9.81;
+    const double rhocp = 1200.0;
+    const double cfree = 1.0;
+    double Hpos_g = (RabsG > 0.0) ? 0.5 * RabsG : 0.0;
+    double Tk_g = clim.tc + 273.15;
+    double wstar_g = std::pow(ggrav * other.zref * Hpos_g / (rhocp * Tk_g), 1.0 / 3.0);
+    double ue_g = std::sqrt(out.uf * out.uf + cfree * cfree * wstar_g * wstar_g);
+    out.gHa = gturbCpp(ue_g, d, zm, other.zref, ph, other.psih, 0.03);
     // Calculate temperatures
     out.Tc = PenmanMonteithCpp(rad.RabsC, out.gHa, out.gHa, clim.tc, clim.te, clim.pk, clim.ea, 0.97, other.G, 1.0);
     out.Tg = PenmanMonteithCpp(RabsG, out.gHa, out.gHa, clim.tc, clim.te, clim.pk, clim.ea, 0.97, other.G, 1.0);
+    // DEBUG (temporary): running-max trace on raw snow-model ground temp, gated on
+    // the same env var as the rhcanopy()/TVbelow() traces, silent by default.
+    static int g_snowoneB_debug_on = -1;
+    if (g_snowoneB_debug_on < 0) {
+        g_snowoneB_debug_on = (std::getenv("MCF_DEBUG_RHCANOPY") != nullptr) ? 1 : 0;
+    }
+    static double g_snowoneB_debug_maxtg = -999.0;
+    if (g_snowoneB_debug_on && out.Tg > g_snowoneB_debug_maxtg) {
+        g_snowoneB_debug_maxtg = out.Tg;
+        Rcpp::Rcout << "[snowoneB NEW MAX Tg] Tg=" << out.Tg << " Tc=" << out.Tc
+                    << " tc=" << clim.tc << " RabsG=" << RabsG << " uf=" << out.uf
+                    << " ue_g=" << ue_g << " wstar_g=" << wstar_g << " gHa=" << out.gHa << "\n";
+    }
     double tdew = dewpointCpp(clim.ea);
     if (out.Tc < tdew) out.Tc = tdew;
     if (out.Tg < tdew) out.Tg = tdew;

@@ -15,6 +15,7 @@
 #include <cfloat>
 #include <numeric>
 #include <queue>
+#include <cstdlib>
 using namespace Rcpp;
 
 // Physical / mathematical constants

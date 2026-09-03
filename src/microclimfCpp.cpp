@@ -1437,7 +1437,45 @@ double rhcanopy(double uf, double h, double d, double z, double H, double Tk)
     double mu = 1.0 / (a2 * h * ue);
     double rHa = inth * mu;
     if (rHa < 0.001) rHa = 0.001;
+    // DEBUG (temporary -- drop before merging): print the free-convection inputs
+    // for the first few pathologically high-resistance calls so we can see
+    // whether wstar/ue are behaving as expected on real run data, or whether
+    // H is coming through as ~0/negative (stable) at the cells that are still
+    // blowing up. Gate on an env var so normal runs are silent and unaffected.
+    static int g_rhcanopy_debug_n = -1;
+    if (g_rhcanopy_debug_n < 0) {
+        g_rhcanopy_debug_n = (std::getenv("MCF_DEBUG_RHCANOPY") != nullptr) ? 0 : -2;
+    }
+    if (g_rhcanopy_debug_n >= 0 && g_rhcanopy_debug_n < 40 && rHa > 500.0) {
+        Rcpp::Rcout << "[rhcanopy] uf=" << uf << " h=" << h << " z=" << z
+                    << " H=" << H << " Hpos=" << Hpos << " Tk=" << Tk
+                    << " wstar=" << wstar << " ue=" << ue << " rHa=" << rHa << "\n";
+        g_rhcanopy_debug_n++;
+    }
     return rHa;
+}
+
+// Standalone diagnostic export -- lets you hand-check the free-convection
+// correction for specific (uf, h, d, z, H, Tk) values from R without needing
+// a full model run. Temporary; drop before merging fix/calm-wind-free-convection.
+// [[Rcpp::export]]
+List rhcanopyDebugCpp(double uf, double h, double d, double z, double H, double Tk)
+{
+    const double ggrav = 9.81;
+    const double rhocp = 1200.0;
+    const double cfree = 1.0;
+    double Hpos = (H > 0.0) ? H : 0.0;
+    double wstar = std::pow(ggrav * h * Hpos / (rhocp * Tk), 1.0 / 3.0);
+    double ue = std::sqrt(uf * uf + cfree * cfree * wstar * wstar);
+    double rHa = rhcanopy(uf, h, d, z, H, Tk);
+    double rHa_noconv = rhcanopy(uf, h, d, z, 0.0, Tk); // same call but with H forced to 0, for comparison
+    return Rcpp::List::create(
+        Rcpp::Named("Hpos") = Hpos,
+        Rcpp::Named("wstar") = wstar,
+        Rcpp::Named("ue") = ue,
+        Rcpp::Named("rHa") = rHa,
+        Rcpp::Named("rHa_no_free_conv") = rHa_noconv
+    );
 }
 double TVbelow(double zref, double z, double d, double h, double pai, double uf,
     double leafden, double Flux, double Fluxz, double SH, double SG, double mxnear,

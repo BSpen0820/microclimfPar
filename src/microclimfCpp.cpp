@@ -4044,8 +4044,30 @@ snowmodpoint snowoneB(obspoint obstime, climpoint clim, vegpoint vegp, snowpoint
     const double ggrav = 9.81;
     const double rhocp = 1200.0;
     const double cfree = 1.0;
-    double Hpos_g = (RabsG > 0.0) ? 0.5 * RabsG : 0.0;
+    const double sbc_g = 5.67e-8;
     double Tk_g = clim.tc + 273.15;
+    // CORRECTION (see physics-audit-findings.md): RabsG is absorbed radiation
+    // (shortwave + downwelling longwave), not net radiation -- it omits surface
+    // emission, so it stays positive even on a clear calm night when the true
+    // surface sensible heat flux is downward. Using it directly as an H proxy
+    // was inflating gHa (and Tg) unconditionally, including under stable
+    // stratification, contrary to both cited references: CLM5 sets its
+    // convective velocity scale Uc=0 whenever the surface layer is stable
+    // (Lawrence et al. 2019, Fluxes ch., eq. 2.5.28), and Beljaars (1995)'s w*
+    // is derived for the free-convection limit only, undefined for a stable
+    // surface layer. Independent review estimated this was warming Tg by up to
+    // ~12C on clear calm winter nights before this correction. Fix: convert
+    // absorbed radiation to an estimated NET radiation first, using Ts~=Ta as
+    // the standard zeroth-order surface-temperature guess for the emission term
+    // (exact in the neutral limit, and Tg itself isn't solved yet at this
+    // point), then gate Hpos_g on THAT.
+    double Rnet_g = RabsG - 0.97 * sbc_g * Tk_g * Tk_g * Tk_g * Tk_g;
+    double Hpos_g = (Rnet_g > 0.0) ? 0.5 * Rnet_g : 0.0;
+    // Melt-season guard: with snow present and air temp above freezing, the snow
+    // surface is pinned near 0C while the air is warmer, so the true H is
+    // downward even though Rnet_g > 0 here -- the Ts~=Ta guess specifically
+    // misses this case.
+    if (snow.sdepg > 0.0 && clim.tc > 0.0) Hpos_g = 0.0;
     double wstar_g = std::pow(ggrav * other.zref * Hpos_g / (rhocp * Tk_g), 1.0 / 3.0);
     double ue_g = std::sqrt(out.uf * out.uf + cfree * cfree * wstar_g * wstar_g);
     out.gHa = gturbCpp(ue_g, d, zm, other.zref, ph, other.psih, 0.03);
